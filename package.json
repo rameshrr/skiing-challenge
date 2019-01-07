@@ -1,0 +1,25 @@
+{
+  "name": "skiing-challenge",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "set DEBUG=SKII & node ./test",
+    "start": "npm run test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rameshrr/skiing-challenge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/rameshrr/skiing-challenge/issues"
+  },
+  "homepage": "https://github.com/rameshrr/skiing-challenge#readme",
+  "dependencies": {
+    "debug": "^4.1.1",
+    "request": "^2.88.0"
+  }
+}
