@@ -1,71 +1,118 @@
-const request = require('request');
+const request = require('request-promise');
 const debug = require('debug');
 
-const ElevationData = require('./elevation-data')
+const ElevationData = require('./elevation-data');
+const { getClosestNode } = require('./utils');
+
+const { promisify } = require('util');
+const fs = require('fs');
+
+const readFilePromise = promisify(fs.readFile);
+const setImmediatePromise = promisify(setImmediate);
 
 const log = debug('SKII');
-const DATA_URL = 'http://s3-ap-southeast-1.amazonaws.com/geeks.redmart.com/coding-problems/map.txt';
 const LINE_DELIMITER = '\n';
 const ITEM_DELIMITER = / /g;
 
 class Skiing {
     constructor() {
-        this.indexedData = null;
+        this.indexedData = [];
+        this.longestPath = [];
     }
 
-    computeFromUrl() {
-        const skiData = this.downloadData(DATA_URL);
+    async computeFromUrl(dataUrl) {
+        const skiData = await this.downloadData(dataUrl);
+
+        if (!skiData) {
+            return;
+        }
 
         this.indexNodes(skiData);
-        this.compute();
+        return await this.compute();
     }
 
-    downloadData(url) {
+    async computeFromFile(dataUrl) {
+        const skiData = await this.readFileData(dataUrl);
+
+        if (!skiData) {
+            return;
+        }
+
+        this.indexNodes(skiData);
+        return await this.compute();
+    }
+
+    async downloadData(url) {
 
         log('Trying to download input data');
 
-        request(url, (err, res, body) => {
-            if (err) {
-                log('Unable to download data', err);
-                return;
-            }
+        let response = null;
 
-            if (res && res.statusCode != '200') {
-                log('Unable to download data', body);
-                return;
-            }
+        try {
+            response = await request(url);
+        } catch (err) {
+            log(err.stack);
+            return;
+        }
 
-            log('Input data has been downloaded');
+        if (response instanceof Error) {
+            log(response.stack);
+            return;
+        }
 
-            const rawData = body.split(LINE_DELIMITER);
+        log('Input data has been downloaded');
 
-            if (rawData.length == 0) {
-                log('Invalid data', body);
-                return;
-            }
+        return this.processData(response);
+    }
 
-            const headerInfo = rawData.shift().split(ITEM_DELIMITER);
-            const rows = headerInfo[0];
-            const columns = headerInfo[1];
+    async readFileData(filePath) {
 
-            const parsedData = [];
-            for (let i = 0; i < rows; i++) {
-                parsedData[i] = rawData[i].split(ITEM_DELIMITER);
-            }
+        log('Trying to read input data');
 
-            return parsedData;
-        });
+        let response = null;
+
+        try {
+            response = await readFilePromise(filePath, 'utf8');
+        } catch (err) {
+            log(err.stack);
+            return;
+        }
+
+        log('Able to read file from disk');
+
+        return this.processData(response);
+    }
+
+    processData(response) {
+        const rawData = response.split(LINE_DELIMITER);
+
+        if (rawData.length == 0) {
+            log('Invalid data', response);
+            return;
+        }
+
+        const headerInfo = rawData.shift().split(ITEM_DELIMITER);
+        const rows = headerInfo[0];
+        const columns = headerInfo[1];
+
+        const parsedData = [];
+        for (let i = 0; i < rows; i++) {
+            parsedData[i] = rawData[i].split(ITEM_DELIMITER);
+            parsedData[i] = parsedData[i].map(Number);
+        }
+
+        return parsedData;
     }
 
     indexNodes(skiData) {
 
         for (let rowIndex = 0; rowIndex < skiData.length; rowIndex++) {
-            this.indexedData[rowIndex] = [];
+            this.indexedData.push([]);
 
             for (let colIndex = 0; colIndex < skiData[rowIndex].length; colIndex++) {
                 const currentSki = skiData[rowIndex];
 
-                const cheapestNode = [
+                let allNodes = [
                     /// North Direction
                     {
                         value: rowIndex === 0 ? null : skiData[rowIndex - 1][colIndex],
@@ -94,14 +141,18 @@ class Skiing {
                     {
                         value: colIndex === 0 ? null : currentSki[colIndex - 1],
                         rowIndex,
-                        colIndex: dex === 0 ? null : colIndex - 1,
+                        colIndex: colIndex === 0 ? null : colIndex - 1,
                         direction: 'WEST'
                     },
-                ].reduce((current, previous) => {
-                    /// Should be less than current node & biggest between them
-                    return current.value < currentSki[colIndex] &&
-                        current.value > previous.value ? current : previous;
-                });
+                ];
+
+                let cheapestNode = null;
+
+                try {
+                    cheapestNode = getClosestNode(allNodes, currentSki[colIndex]);
+                } catch (err) {
+                    log(err);
+                }
 
                 cheapestNode = {
                     ...cheapestNode,
@@ -114,42 +165,68 @@ class Skiing {
         }
     }
 
-    compute() {
+    async compute() {
         for (let rowIndex = 0; rowIndex < this.indexedData.length; rowIndex++) {
             for (let colIndex = 0; colIndex < this.indexedData[rowIndex].length; colIndex++) {
                 const currentNode = this.indexedData[rowIndex][colIndex];
-                const path = this.computeByIndex(rowIndex, colIndex, []);
+                const path = await this.computeByIndex(rowIndex, colIndex, [currentNode.currentValue]);
 
-                currentNode.setPath(path);
+                if (this.longestPath.length < path.length) {
+                    this.longestPath = path;
+                }
+
+                if (this.longestPath.length &&
+                    this.longestPath.length === path.length &&
+                    this.longestPath[0] - this.longestPath[this.longestPath.length - 1] < path[0] - path[path.length - 1]) {
+                    this.longestPath = path;
+                }
             }
         }
 
-        const longestNodes = [];
+        // const longestNodes = [];
 
-        for (let rowIndex = 0; rowIndex < this.indexedData.length; rowIndex++) {
-            const longestNode = this.indexedData[rowIndex].reduce((current, previous) => {
-                return current.pathLength > previous.pathLength;
-            });
+        // for (let rowIndex = 0; rowIndex < this.indexedData.length; rowIndex++) {
+        //     const longestNode = this.indexedData[rowIndex].reduce((current, previous) => {
+        //         return current.pathLength > previous.pathLength;
+        //     });
 
-            longestNodes.push(longestNode);
-        }
+        //     longestNodes.push(longestNode);
+        //     await setImmediatePromise();
+        // }
 
-        const verticalLongestNode = longestNodes.reduce((current, previous) => {
-            return current.pathLength > previous.pathLength;
-        });
+        // const verticalLongestNode = longestNodes.reduce((current, previous) => {
+        //     return current.pathLength > previous.pathLength;
+        // });
 
-        return verticalLongestNode;
+        // return verticalLongestNode;
+
+        return this.longestPath;
     }
 
-    computeByIndex(rowIndex, colIndex, path) {
-        const currentNode = this.indexedData[rowIndex][colIndex];
-        if (currentNode.value) {
-            path.push(currentNode);
+    async computeByIndex(rowIndex, colIndex, path, prevNode = null) {
+
+        if (rowIndex == null || colIndex == null) {
+            return path;
         }
 
-        if (currentNode.rowIndex && currentNode.colIndex) {
-            return this.computeByIndex(currentNode.rowIndex, currentNode.colIndex, path);
+        const currentNode = this.indexedData[rowIndex][colIndex];
+
+        if (prevNode && currentNode.isEqual(prevNode.rowIndex, prevNode.colIndex)) {
+            return path;
         }
+
+        if (currentNode.value) {
+            path.push(currentNode.value);
+        }
+
+        if (currentNode.rowIndex >= 0 && currentNode.colIndex >= 0) {
+            return this.computeByIndex(currentNode.rowIndex, currentNode.colIndex, path, {
+                rowIndex,
+                colIndex
+            });
+        }
+
+        await setImmediatePromise();
 
         return path;
     }
