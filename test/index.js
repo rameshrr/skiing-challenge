@@ -8,8 +8,11 @@ const FILE_PATH = path.resolve(__dirname, './map.txt');
 
 (async function findPath() {
 
-    // const deepPath = await skiing.computeFromUrl(DATA_URL);
-    const deepPath = await skiing.computeFromFile(FILE_PATH);
+    console.time('SKI');
+    const deepPath = await skiing.computeFromUrl(DATA_URL);
+    // const deepPath = await skiing.computeFromFile(FILE_PATH);
 
-    console.log(deepPath.length, deepPath);
+    console.timeEnd('SKI');
+
+    console.log('Path Length: ', deepPath.length, ', Path: ', deepPath);
 })();
