@@ -2,7 +2,7 @@ const request = require('request-promise');
 const debug = require('debug');
 
 const ElevationData = require('./elevation-data');
-const { getClosestNode } = require('./utils');
+const { getClosestNode, getClosestNodes } = require('./utils');
 
 const { promisify } = require('util');
 const fs = require('fs');
@@ -146,21 +146,19 @@ class Skiing {
                     },
                 ];
 
-                let cheapestNode = null;
+                let nodeData = null;
 
                 try {
-                    cheapestNode = getClosestNode(allNodes, currentSki[colIndex]);
+                    nodeData = getClosestNodes(allNodes, currentSki[colIndex]);
+
+                    if (nodeData) {
+                        nodeData.setLocation(rowIndex, colIndex);
+                    }
                 } catch (err) {
                     log(err);
                 }
 
-                cheapestNode = {
-                    ...cheapestNode,
-                    currentValue: currentSki[colIndex]
-                };
-
-                const elevationData = new ElevationData(cheapestNode);
-                this.indexedData[rowIndex].push(elevationData);
+                this.indexedData[rowIndex].push(nodeData);
             }
         }
     }
@@ -168,39 +166,51 @@ class Skiing {
     async compute() {
         for (let rowIndex = 0; rowIndex < this.indexedData.length; rowIndex++) {
             for (let colIndex = 0; colIndex < this.indexedData[rowIndex].length; colIndex++) {
-                const currentNode = this.indexedData[rowIndex][colIndex];
-                const path = await this.computeByIndex(rowIndex, colIndex, [currentNode.currentValue]);
+                const nodeData = this.indexedData[rowIndex][colIndex];
 
-                if (this.longestPath.length < path.length) {
-                    this.longestPath = path;
-                }
+                if (nodeData && nodeData.elevationDatas && Array.isArray(nodeData.elevationDatas) && nodeData.elevationDatas.length) {
 
-                if (this.longestPath.length &&
-                    this.longestPath.length === path.length &&
-                    this.longestPath[0] - this.longestPath[this.longestPath.length - 1] < path[0] - path[path.length - 1]) {
-                    this.longestPath = path;
+                    const path = nodeData.optimizedPath || await this.computeByNode(nodeData);
+
+                    if (this.longestPath.length < path.length) {
+                        this.longestPath = path;
+                    }
+
+                    if (this.longestPath.length &&
+                        this.longestPath.length === path.length &&
+                        this.longestPath[0] - this.longestPath[this.longestPath.length - 1] < path[0] - path[path.length - 1]) {
+                        this.longestPath = path;
+                    }
                 }
             }
         }
 
-        // const longestNodes = [];
-
-        // for (let rowIndex = 0; rowIndex < this.indexedData.length; rowIndex++) {
-        //     const longestNode = this.indexedData[rowIndex].reduce((current, previous) => {
-        //         return current.pathLength > previous.pathLength;
-        //     });
-
-        //     longestNodes.push(longestNode);
-        //     await setImmediatePromise();
-        // }
-
-        // const verticalLongestNode = longestNodes.reduce((current, previous) => {
-        //     return current.pathLength > previous.pathLength;
-        // });
-
-        // return verticalLongestNode;
-
         return this.longestPath;
+    }
+
+    async computeByNode(nodeData) {
+        if (nodeData.optimizedPath) {
+            return nodeData.optimizedPath;
+        }
+
+        let allPaths = await Promise.all(nodeData.elevationDatas.map(async elevationData => {
+            if (elevationData.optimizedPath) {
+                return elevationData.optimizedPath;
+            }
+
+            const optimizedPath = await this.computeByIndex(elevationData.rowIndex, elevationData.colIndex, [nodeData.value]);
+            elevationData.setOptimizedPath(optimizedPath);
+
+            return optimizedPath;
+        }));
+
+        if (!nodeData.elevationDatas.length) {
+            allPaths = [[nodeData.value]];
+        }
+
+        nodeData.setOptimizedPath(allPaths);
+
+        return nodeData.optimizedPath;
     }
 
     async computeByIndex(rowIndex, colIndex, path, prevNode = null) {
@@ -211,19 +221,17 @@ class Skiing {
 
         const currentNode = this.indexedData[rowIndex][colIndex];
 
-        if (prevNode && currentNode.isEqual(prevNode.rowIndex, prevNode.colIndex)) {
-            return path;
-        }
+        // if (prevNode && currentNode.isEqual(prevNode.rowIndex, prevNode.colIndex)) {
+        //     return path;
+        // }
 
-        if (currentNode.value) {
-            path.push(currentNode.value);
-        }
+        // if (currentNode.value) {
+        //     path.push(currentNode.value);
+        // }
 
         if (currentNode.rowIndex >= 0 && currentNode.colIndex >= 0) {
-            return this.computeByIndex(currentNode.rowIndex, currentNode.colIndex, path, {
-                rowIndex,
-                colIndex
-            });
+            const nextPath = await this.computeByNode(currentNode);
+            return [...path, ...nextPath];
         }
 
         await setImmediatePromise();

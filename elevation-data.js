@@ -6,6 +6,8 @@ class ElevationData {
         colIndex,
         direction,
     }) {
+        this.optimizedPath = null;
+
         this.value = value;
         this.currentValue = currentValue;
         this.rowIndex = rowIndex;
@@ -16,6 +18,10 @@ class ElevationData {
     setPath(path) {
         this.pathLength = path.length || 0;
         this.leastValue = path.length ? path[path.length - 1] : null;
+    }
+
+    setOptimizedPath(path) {
+        this.optimizedPath = path;
     }
 
     isEqual(rowIndex, colIndex) {

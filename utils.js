@@ -1,3 +1,6 @@
+const ElevationData = require('./elevation-data');
+const NodeData = require('./node-data');
+
 module.exports = {
 
     getClosestNode: function (nodes, goal) {
@@ -14,23 +17,12 @@ module.exports = {
         });
 
         return nodes[index] || null;
+    },
 
-        let i = 0;
+    getClosestNodes: function (nodes, currentValue) {
+        const closestNodes = nodes.filter(node => node.value && node.value < currentValue);
+        const closestNodesData = closestNodes.map(node => new ElevationData({ ...node, currentValue }));
 
-        nodes = nodes.sort((first, second) => {
-            if (first.value < second.value) {
-                return -1;
-            } else if (first.value > second.value) {
-                return 1;
-            }
-
-            return 0;
-        });
-
-        if (nodes[i].value > goal) return null;
-
-        while (nodes[++i] && nodes[i - 1].value < goal);
-
-        return nodes[--i];
+        return new NodeData(currentValue, closestNodesData);
     }
 }

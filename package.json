@@ -1,10 +1,10 @@
 {
   "name": "skiing-challenge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "set DEBUG=SKII & node ./test",
+    "test": "set DEBUG=SKII & node ./test --DATA_URL=http://s3-ap-southeast-1.amazonaws.com/geeks.redmart.com/coding-problems/map.txt",
     "start": "npm run test"
   },
   "repository": {
